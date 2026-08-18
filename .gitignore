@@ -1,0 +1,13 @@
+(
+echo node_modules/
+echo .env
+echo .env.*
+echo !.env.example
+echo __pycache__/
+echo *.pyc
+echo venv/
+echo .venv/
+echo dist/
+echo build/
+echo .DS_Store
+) > .gitignore
