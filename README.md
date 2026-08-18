@@ -79,11 +79,16 @@ SQLite persistence via SQLAlchemy (`backend/database.py`) — swap
 | `backend/mock_data.py: DEMO_LOCATIONS` | 5 hardcoded Ambegaon-taluka villages | Real parcels from the district being demoed, pulled from Dataset lead's boundary layer |
 | `POST /api/auth/login` | Accepts any username/password | Real auth against the district officer roster (or defer entirely for the hackathon demo) |
 
-## Handing off to ML/Dataset leads (Completed)
+## Status: PART 1.1 Completed (Hardening, Correctness, and Validation Pass)
 
-The real ML model is now integrated inside `backend/ml/`!
-- The dataset was discovered as `OSCD` (13 bands) and the `SiameseUNetAttention` was modified to accept 13 channels.
-- The `/api/detect-change` endpoint now uses `ModelService.predict()` to run real inferences over real Sentinel-2 satellite data, generating probability masks, spatial connected components, and properly formatted GeoJSON.
+BhoomiDrishti has completed the ML structural hardening pass. 
+- **Model Checkpoints**: Forced strict requirement. Models are no longer randomly initialized.
+- **Portability**: Eliminated hardcoded file paths in favor of `OSCD_DATASET_ROOT`.
+- **Spatial Alignment**: Implemented a mandatory 10m target grid for all 13 Sentinel-2 bands, actively validating raster dimensions.
+- **Honest GeoJSON**: Removed hardcoded confidence metrics. Regions now inherit localized predicted confidence. Replaced false geographical claims with `georeferenced=False` and `area_method=pixel_resolution_10m` when dataset CRSs are missing.
+- **Testing**: Added validation tools `check_dataset.py`, `check_model.py`, and U-Net padding unit tests.
+
+The `/api/detect-change` endpoint now uses `ModelService.predict()` to run real inferences over real Sentinel-2 satellite data, generating probability masks, spatial connected components, and properly formatted GeoJSON.
 - Mocking was completely decoupled from production. `run_mock_detection` only exists for initial local database seeding.
 - `FocalLoss` and `DiceLoss` were integrated.
 - To train the model or test ML:

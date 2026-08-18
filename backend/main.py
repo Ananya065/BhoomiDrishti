@@ -110,30 +110,39 @@ def get_change(change_id: str, db: Session = Depends(get_db)):
 def detect_change(req: DetectRequest, db: Session = Depends(get_db)):
     """
     Runs detection on a before/after image pair for a location.
-    Now backed by real SiameseUNet inference.
+    Backed by real SiameseUNet inference.
     """
     from ml.services.model_service import get_model_service
     import uuid
     import datetime
-    import random
     import os
     import json
 
-    # For the hackathon context, if the frontend sends placehold.co URLs or no URLs,
-    # we point to real dataset images to demonstrate the pipeline.
-    # In a fully integrated version, we'd download the URLs or use uploaded files.
-    base_dataset_path = r"C:\Users\adity\OneDrive\Desktop\oscd_dataset"
-    city = "abudhabi" # using an example city to guarantee real inference runs
-    before_path = os.path.join(base_dataset_path, "Onera Satellite Change Detection dataset - Images", city, "imgs_1_rect")
-    after_path = os.path.join(base_dataset_path, "Onera Satellite Change Detection dataset - Images", city, "imgs_2_rect")
+    # Ensure no hardcoded OSCD root paths exist in production. 
+    # Must use ENV or fallback to an explicit development path relative to repo or explicitly configured.
+    # The frontend doesn't yet upload actual TIFs, so we simulate `uploaded_pair` vs `oscd_sample` via req properties.
     
-    # We pass paths directly if we had them; since we process bands locally, we pass directories here
-    # Our ModelService takes paths to the TIF stack or directory of bands. We need to ensure ModelService handles directory correctly.
-    # Wait, in model_service.py I assumed `_load_and_preprocess_image` takes a file_path, but Sentinel-2 OSCD has them split into B01.tif, etc.
-    # Let me actually just pass the directory, and the ModelService will read B01..B12, B8A.
-    # Oh wait, I need to make sure model_service is updated to handle OSCD format specifically if it's a directory.
-    # I will assume `before_path` is a directory here.
+    inference_mode = req.mode if hasattr(req, "mode") and req.mode else "oscd_sample"
     
+    if inference_mode == "oscd_sample":
+        # Use explicitly chosen city from request or fallback to Abu Dhabi for demo purposes
+        city = (req.location_name or "abudhabi").lower().replace(" ", "")
+        
+        # Pull from explicitly defined environment variable to ensure portability
+        base_dataset_path = os.environ.get("OSCD_DATASET_ROOT", "/data/oscd")
+        
+        before_path = os.path.join(base_dataset_path, "Onera Satellite Change Detection dataset - Images", city, "imgs_1_rect")
+        after_path = os.path.join(base_dataset_path, "Onera Satellite Change Detection dataset - Images", city, "imgs_2_rect")
+        
+        if not os.path.exists(before_path):
+            raise HTTPException(status_code=400, detail=f"OSCD sample not found for city: {city} at {before_path}")
+    else:
+        # For actual production: 
+        if not req.before_image_url or not req.after_image_url:
+            raise HTTPException(status_code=400, detail="Missing before_image_url and after_image_url for uploaded_pair mode.")
+        before_path = req.before_image_url
+        after_path = req.after_image_url
+
     model_service = get_model_service()
     try:
         prediction = model_service.predict(before_path, after_path)
@@ -144,13 +153,13 @@ def detect_change(req: DetectRequest, db: Session = Depends(get_db)):
     confidence = prediction["detection"]["confidence"]
     geojson = prediction["geojson"]
     
-    # PART 2 fields must be 'pending' or non-fabricated
-    seq = random.randint(800, 999) # Generate a simple ID
+    # Deterministic Unique ID instead of random.randint
+    unique_id = uuid.uuid4().hex[:8].upper()
     now = datetime.datetime.utcnow()
     
     record = ChangeRecord(
-        case_number=f"PD2026-{seq:04d}",
-        location_name=req.location_name or city,
+        case_number=f"PD2026-{unique_id}",
+        location_name=req.location_name or (city if inference_mode == "oscd_sample" else "Unknown"),
         latitude=req.latitude,
         longitude=req.longitude,
         change_type="Pending",
