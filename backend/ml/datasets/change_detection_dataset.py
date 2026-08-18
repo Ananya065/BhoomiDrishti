@@ -6,23 +6,44 @@ import rasterio
 import numpy as np
 
 class OSCDDataset(Dataset):
-    def __init__(self, base_path, split="train", transform=None, patch_size=256):
+    def __init__(self, base_path, split="train", cities=None, label_split=None, transform=None, patch_size=256):
+        """
+        Args:
+            base_path:    Path to the OSCD dataset root.
+            split:        Used only when cities=None to find the split .txt file.
+            cities:       If provided, overrides the split .txt and uses these cities directly.
+            label_split:  'train' or 'test' — controls which Labels folder is used.
+                          Defaults to 'train' when cities are provided, otherwise inferred from split.
+            transform:    Optional transform (not currently used; preprocessing is inline).
+            patch_size:   Patch size in pixels (256).
+        """
         self.base_path = base_path
         self.split = split
         self.transform = transform
         self.patch_size = patch_size
-        
+
         self.images_dir = os.path.join(base_path, "Onera Satellite Change Detection dataset - Images")
-        self.labels_dir = os.path.join(base_path, f"Onera Satellite Change Detection dataset - {'Train' if split == 'train' else 'Test'} Labels")
-        
-        split_file = os.path.join(self.images_dir, f"{split}.txt")
-        self.cities = []
-        if os.path.exists(split_file):
-            with open(split_file, "r") as f:
-                content = f.read().strip()
-                self.cities = [c.strip() for c in content.split(",") if c.strip()]
+
+        # Determine which Labels folder to use
+        if label_split is not None:
+            _lf = label_split
+        elif cities is not None:
+            _lf = "train"          # custom-city datasets always come from Train Labels
         else:
-            raise FileNotFoundError(f"Split file not found: {split_file}")
+            _lf = "test" if "test" in split.lower() else "train"
+        self.labels_dir = os.path.join(base_path, f"Onera Satellite Change Detection dataset - {'Test' if _lf == 'test' else 'Train'} Labels")
+
+        if cities is not None:
+            self.cities = cities
+        else:
+            split_file = os.path.join(self.images_dir, f"{split}.txt")
+            self.cities = []
+            if os.path.exists(split_file):
+                with open(split_file, "r") as f:
+                    content = f.read().strip()
+                    self.cities = [c.strip() for c in content.split(",") if c.strip()]
+            else:
+                raise FileNotFoundError(f"Split file not found: {split_file}")
             
         self.samples = []
         # Precompute valid patches
@@ -35,7 +56,9 @@ class OSCDDataset(Dataset):
             imgs_2_dir = os.path.join(city_path, "imgs_2_rect")
             
             lbl_path = os.path.join(self.labels_dir, city, "cm", f"{city}-cm.tif")
-            if split == "train" and not os.path.exists(lbl_path):
+            # Skip cities that have no label file (applicable to custom-city splits from train labels)
+            require_label = _lf != "test"
+            if require_label and not os.path.exists(lbl_path):
                 continue
                 
             # Use B04 (10m band) to determine spatial grid

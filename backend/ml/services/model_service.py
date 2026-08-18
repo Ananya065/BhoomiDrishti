@@ -32,9 +32,14 @@ class ModelService:
         self.s2_model.eval()
         
         if self.s2_checkpoint and os.path.exists(self.s2_checkpoint):
-            state_dict = torch.load(self.s2_checkpoint, map_location=self.device)
+            ckpt = torch.load(self.s2_checkpoint, map_location=self.device)
+            # Handle both legacy raw state_dict and rich checkpoint dict
+            state_dict = ckpt["model_state_dict"] if isinstance(ckpt, dict) and "model_state_dict" in ckpt else ckpt
             self.s2_model.load_state_dict(state_dict)
-            print(f"Loaded Sentinel-2 model from {self.s2_checkpoint}")
+            if isinstance(ckpt, dict) and "epoch" in ckpt:
+                print(f"Loaded Sentinel-2 model from {self.s2_checkpoint} (epoch={ckpt['epoch']}, val_f1={ckpt.get('val_f1', 'n/a'):.4f})")
+            else:
+                print(f"Loaded Sentinel-2 model from {self.s2_checkpoint}")
         else:
             raise FileNotFoundError("Sentinel-2 ML model checkpoint unavailable. Cannot run inference.")
 

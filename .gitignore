@@ -21,3 +21,15 @@ env/
 # Project specific
 backend/bhoomidrishti.db
 backend/ml/models/best_model.pth
+
+# GIS datasets — large files, not tracked in Git
+# Place them in backend/data/gis/ and set GIS_DATA_ROOT in your .env
+backend/data/gis/all_india_water.geojson
+backend/data/gis/india_protected_areas.geojson
+backend/data/gis/all_india_forest_boundaries.geojson
+
+# Training datasets (OSCD, RAF, etc.) — keep off Git
+training_data/
+sensitivity_zones/
+oscd_dataset/
+

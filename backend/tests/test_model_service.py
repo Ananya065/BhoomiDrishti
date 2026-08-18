@@ -13,7 +13,7 @@ def test_model_service_sentinel2_success():
         assert service.sensor == 'sentinel2'
         assert service.s2_model is not None
         assert service.liss4_model is None
-        assert service.s2_model.in_channels == 13
+        assert service.s2_model.initial[0].in_channels == 13
 
 def test_model_service_liss4_missing_checkpoint():
     """Test that LISS-4 honestly fails when checkpoint is missing."""
@@ -31,7 +31,7 @@ def test_model_service_liss4_success():
         assert service.sensor == 'liss4'
         assert service.liss4_model is not None
         assert service.s2_model is None
-        assert service.liss4_model.in_channels == 3
+        assert service.liss4_model.initial[0].in_channels == 3
 
 def test_model_service_unsupported_sensor():
     with pytest.raises(ValueError, match="Unsupported sensor"):

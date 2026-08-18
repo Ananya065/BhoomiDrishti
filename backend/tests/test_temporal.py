@@ -1,6 +1,10 @@
+import os
+import sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 import pytest
 from unittest.mock import MagicMock
-from backend.ml.intelligence.temporal_engine import analyze_temporal
+from ml.intelligence.temporal_engine import analyze_temporal
 
 class MockChangeRecord:
     def __init__(self, id, location_name, area_sq_m, detected_at, mask_geojson=None):
@@ -9,6 +13,9 @@ class MockChangeRecord:
         self.area_sq_m = area_sq_m
         self.detected_at = detected_at
         self.mask_geojson = mask_geojson
+        # Add attributes required by temporal_engine.py query and logic
+        self.after_image_date = detected_at
+        self.before_image_date = detected_at
 
 def test_analyze_temporal_new():
     session = MagicMock()
