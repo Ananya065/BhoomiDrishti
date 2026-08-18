@@ -1,0 +1,3 @@
+"""
+Classification module for BhoomiDrishti.
+"""

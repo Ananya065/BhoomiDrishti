@@ -1,39 +1,41 @@
-# BhoomiDrishti — Full-Stack Govt Portal (SIH1518)
+# BhoomiDrishti — Satellite-Based Change Detection Portal (SIH1518)
 
-End-to-end runnable app matching the govt-portal UI/UX design: FastAPI
-backend + React/Leaflet frontend (routed, multi-screen) + SQLite DB +
-Docker. **The ML model is mocked** (`backend/mock_data.py`) so the whole
-stack works today, before the real Siamese/SNUNet model or the real
-sensitivity-zone overlap logic exist. Swap those in later without
-touching routes, DB schema, or frontend — see "Handing off to ML/Dataset
-leads" below.
+Full-stack government land-monitoring portal: FastAPI backend with a real
+**Siamese Attention U-Net** ML model + **CLIP zero-shot classification** +
+**GIS sensitivity-zone analysis** + **Groq-powered AI Copilot** +
+React/Leaflet frontend + SQLite DB.
 
-## Screens implemented (matches the design PDF)
+**Part 1** provides real satellite change detection on OSCD Sentinel-2 data.
+**Part 2** adds an Intelligence Layer: activity classification, GIS overlap,
+severity scoring, temporal tracking, and an AI Copilot.
+
+## Screens
 
 | Screen | Route | Notes |
 |---|---|---|
-| Login | `/login` | Role select + demo auth (any password works) |
-| Control Room Dashboard | `/dashboard` | Stat cards, pending cases table, 6-month trend |
-| Live Map | `/map` | Leaflet map, village/priority filters, info panel |
+| Login | `/login` | Role select + demo auth |
+| Control Room Dashboard | `/dashboard` | Stat cards, pending cases, severity trend |
+| Live Map | `/map` | Leaflet map, priority filters, case info panel |
 | Alerts | `/alerts` | Full case table with status filters |
-| Case File | `/case/:id` | Before/after images, timeline, cadastral records, officer notes, actions |
-| Analytics & Reports | `/reports` | Resolution rate, hotspot chart, category breakdown, exec summary |
-| Field Verification App | `/field-app` | Mobile-frame mockup: inspector assignments + checklist |
-| Citizen Reporting App | `/citizen-app` | Mobile-frame mockup: pin-drop report flow |
+| Case File | `/case/:id` | Intelligence findings, imagery, timeline, cadastral records, officer notes, Copilot |
+| Analytics & Reports | `/reports` | Resolution rate, hotspot chart, category breakdown |
+| Field Verification App | `/field-app` | Mobile-frame mockup |
+| Citizen Reporting App | `/citizen-app` | Mobile-frame mockup |
 
-Demo login: any email + any password works (e.g. `rajesh.patil@maharashtra.gov.in`).
+Demo login: any email + any password (e.g. `rajesh.patil@maharashtra.gov.in`).
 
-## Run it — Option A: without Docker (fastest for local dev)
+## Quick Start
 
 **Backend**
 ```bash
 cd backend
-python -m venv venv && source venv/bin/activate   # or use conda
+python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
+# Set environment variables (see backend/.env.example)
+export OSCD_DATASET_ROOT=/path/to/oscd
+export GROQ_API_KEY=your_key_here   # optional, for Copilot
 uvicorn main:app --reload --port 8000
 ```
-Visit http://localhost:8000/api/health — should return `{"status":"ok"}`.
-Auto-generated API docs: http://localhost:8000/docs
 
 **Frontend** (separate terminal)
 ```bash
@@ -41,101 +43,112 @@ cd frontend
 npm install
 npm run dev
 ```
-Visit http://localhost:5173/login — sign in with any email/password to reach
-the dashboard, which loads 18 seeded demo cases across the map, tables, and analytics.
 
-## Run it — Option B: Docker (matches the blueprint's deployment plan)
-
+**Docker**
 ```bash
 docker compose up --build
 ```
-- Backend: http://localhost:8000
-- Frontend: http://localhost:3000
 
-## API endpoints
+## Environment Variables
 
-- `POST /api/auth/login` — demo login (no real password check yet).
-- `GET /api/changes` — filterable list (sensitivity, type, priority, village, status).
-- `GET /api/changes/{id}` — full case file (includes timeline + notes).
-- `POST /api/detect-change` — runs (mock) detection and stores the result.
-- `PATCH /api/changes/{id}/status` — reviewed / dismissed / needs_review.
-- `PATCH /api/changes/{id}/assign` — reassign officer.
-- `POST /api/changes/{id}/notes` — add an officer field note.
-- `GET /api/changes/{id}/report` — auto-generated evidence report with disclaimer.
-- `GET /api/stats/summary` — dashboard control-room stats.
-- `GET /api/analytics/summary` — resolution rate, hotspots, category breakdown.
-- `GET /api/timeline` — multi-temporal change feed.
+See [`backend/.env.example`](backend/.env.example) for the full list.
 
-SQLite persistence via SQLAlchemy (`backend/database.py`) — swap
-`DATABASE_URL` for Postgres later with no other code changes.
-
-## What's mocked and needs real implementations
-
-| File | Currently | Replace with |
+| Variable | Default | Purpose |
 |---|---|---|
-| `backend/mock_data.py: run_mock_detection()` | Random change type/confidence/area/priority | Real Siamese CNN + SNUNet decoder + classification head + severity scoring output |
-| `backend/mock_data.py` zone tuples | Hardcoded fake zone names (forest/protected area/water body) | Real GeoPandas/Shapely overlap check against Bhuvan/WDPA/India-geodata boundaries |
-| `before_image_url` / `after_image_url` | placehold.co placeholder images | Real Sentinel-2/LISS-4 image tile URLs or served image paths |
-| `backend/mock_data.py: DEMO_LOCATIONS` | 5 hardcoded Ambegaon-taluka villages | Real parcels from the district being demoed, pulled from Dataset lead's boundary layer |
-| `POST /api/auth/login` | Accepts any username/password | Real auth against the district officer roster (or defer entirely for the hackathon demo) |
+| `OSCD_DATASET_ROOT` | `/data/oscd` | Path to OSCD dataset |
+| `CLIP_MODEL_NAME` | `openai/clip-vit-base-patch32` | CLIP model for classification |
+| `CLASSIFICATION_HIGH_THRESHOLD` | `0.6` | High-confidence cutoff |
+| `CLASSIFICATION_MEDIUM_THRESHOLD` | `0.4` | Medium-confidence cutoff |
+| `GIS_DATA_ROOT` | `data/gis` | Directory with GeoJSON layers |
+| `GROQ_API_KEY` | *(none)* | Groq API key (Copilot) |
+| `GROQ_MODEL` | `llama-3.1-8b-instant` | Groq model selection |
 
-## Status: PART 1.1 Completed (Hardening, Correctness, and Validation Pass)
+## API Endpoints
 
-BhoomiDrishti has completed the ML structural hardening pass. 
-- **Model Checkpoints**: Forced strict requirement. Models are no longer randomly initialized.
-- **Portability**: Eliminated hardcoded file paths in favor of `OSCD_DATASET_ROOT`.
-- **Spatial Alignment**: Implemented a mandatory 10m target grid for all 13 Sentinel-2 bands, actively validating raster dimensions.
-- **Honest GeoJSON**: Removed hardcoded confidence metrics. Regions now inherit localized predicted confidence. Replaced false geographical claims with `georeferenced=False` and `area_method=pixel_resolution_10m` when dataset CRSs are missing.
-- **Testing**: Added validation tools `check_dataset.py`, `check_model.py`, and U-Net padding unit tests.
+### Core (Part 1)
+- `POST /api/auth/login` — Demo login
+- `GET /api/changes` — Filterable case list (sensitivity, type, priority, village, status)
+- `GET /api/changes/{id}` — Full case file (timeline + notes)
+- `POST /api/detect-change` — Real Siamese U-Net inference + Intelligence pipeline
+- `PATCH /api/changes/{id}/status` — Update status (reviewed/dismissed/needs_review)
+- `PATCH /api/changes/{id}/assign` — Reassign officer
+- `POST /api/changes/{id}/notes` — Add officer field note
+- `GET /api/changes/{id}/report` — Auto-generated evidence report
+- `GET /api/stats/summary` — Dashboard stats
+- `GET /api/analytics/summary` — Analytics breakdown
+- `GET /api/timeline` — Multi-temporal change feed
 
-The `/api/detect-change` endpoint now uses `ModelService.predict()` to run real inferences over real Sentinel-2 satellite data, generating probability masks, spatial connected components, and properly formatted GeoJSON.
-- Mocking was completely decoupled from production. `run_mock_detection` only exists for initial local database seeding.
-- `FocalLoss` and `DiceLoss` were integrated.
-- To train the model or test ML:
+### Intelligence (Part 2)
+- `GET /api/cases/{id}/intelligence` — Full intelligence record (classification, GIS, severity, temporal)
+- `GET /api/stats/intelligence` — Intelligence-level statistics
+- `POST /api/copilot/chat` — AI Copilot (Groq-backed, tool-calling)
+
+## Intelligence Pipeline (Part 2)
+
+When `/api/detect-change` runs, the Intelligence Layer automatically processes each detection:
+
+1. **CLIP Classification** — Zero-shot activity classification (construction, deforestation, mining, encroachment, other/unknown) using `openai/clip-vit-base-patch32`
+2. **GIS Sensitivity Analysis** — Checks region geometry against available GeoJSON layers (forest, protected area, water body, wetland, agricultural). Gracefully handles non-georeferenced OSCD data.
+3. **Severity Scoring** — Deterministic 0–100 score based on weighted factors: area, detection confidence, activity type, GIS overlap, and classification confidence. Produces human-readable priority reasons.
+4. **Temporal Tracking** — Matches historical detections by spatial overlap (shapely geometry intersection) to classify trends: new, expanding, stable, reduced.
+5. **Groq Copilot** — Tool-calling LLM assistant that queries the database on behalf of officers. Backend-only API key; no secrets in frontend.
+
+All intelligence failures are non-blocking — the core detection always succeeds.
+
+## Testing
+
 ```bash
-# Assuming backend/venv is active
-pip install rasterio matplotlib geopandas shapely scikit-learn
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+cd backend
+# Set PYTHONPATH to project root
+export PYTHONPATH=/path/to/bhoomidrishti
 
-# Inspect Dataset
-python backend/ml/tools/inspect_dataset.py
+# Run Part 2 unit tests
+python -m pytest tests/
 
-# Run Training
-python backend/ml/training/train.py
-
-# Run Tests
+# Run Part 1 ML tests
 python -m unittest backend.ml.tests.test_ml
 ```
 
-## Project structure
+## ML Training
+
+```bash
+pip install rasterio matplotlib geopandas shapely scikit-learn
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+
+python backend/ml/tools/inspect_dataset.py   # Inspect dataset
+python backend/ml/training/train.py           # Train model
+```
+
+## Project Structure
 
 ```
 bhoomidrishti/
 ├── backend/
-│   ├── main.py            # FastAPI routes (auth, cases, notes, analytics)
-│   ├── database.py        # SQLAlchemy models + session
-│   ├── schemas.py         # Pydantic request/response contracts
-│   ├── mock_data.py       # ← swap this for the real model
-│   ├── requirements.txt
-│   └── Dockerfile
+│   ├── main.py                    # FastAPI routes + intelligence orchestration
+│   ├── database.py                # SQLAlchemy ChangeRecord model
+│   ├── intelligence_models.py     # IntelligenceRecord model (Part 2)
+│   ├── schemas.py                 # Pydantic API contracts
+│   ├── intelligence_schemas.py    # Part 2 API schemas
+│   ├── mock_data.py               # Demo seeding only
+│   ├── copilot/
+│   │   ├── copilot_service.py     # Groq tool-calling orchestrator
+│   │   └── tools.py               # Copilot tool definitions
+│   ├── ml/
+│   │   ├── models/                # Trained model weights
+│   │   ├── classification/        # CLIP zero-shot classifier
+│   │   ├── gis/                   # GIS sensitivity-zone analysis
+│   │   ├── intelligence/          # Severity engine + temporal engine
+│   │   ├── services/              # Model service + intelligence service
+│   │   ├── inference/             # Siamese U-Net inference
+│   │   ├── preprocessing/         # 13-band Sentinel-2 preprocessing
+│   │   └── training/              # Training scripts
+│   ├── tests/                     # Automated test suite
+│   ├── .env.example               # Environment variable template
+│   └── requirements.txt
 ├── frontend/
 │   ├── src/
-│   │   ├── App.jsx        # Route definitions
-│   │   ├── auth.jsx       # Login session context
-│   │   ├── api.js         # fetch wrapper for backend endpoints
-│   │   ├── layouts/
-│   │   │   └── AppLayout.jsx    # Sidebar shell for authenticated pages
-│   │   ├── pages/
-│   │   │   ├── Login.jsx
-│   │   │   ├── Dashboard.jsx
-│   │   │   ├── LiveMap.jsx
-│   │   │   ├── Alerts.jsx
-│   │   │   ├── CaseFile.jsx
-│   │   │   ├── Reports.jsx
-│   │   │   ├── FieldApp.jsx     # mobile-frame mockup
-│   │   │   └── CitizenApp.jsx   # mobile-frame mockup
-│   │   └── components/    # Sidebar, TopHeader, Badge, PhoneFrame
-│   ├── package.json
-│   └── Dockerfile
+│   │   ├── pages/                 # Dashboard, LiveMap, CaseFile, etc.
+│   │   └── components/            # CopilotWidget, Sidebar, Badge, etc.
+│   └── package.json
 └── docker-compose.yml
 ```

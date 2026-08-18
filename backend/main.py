@@ -21,6 +21,11 @@ from schemas import (
     OfficerAssign, AddNoteRequest, LoginRequest, LoginResponse,
     TimelineStage, CaseNote,
 )
+from intelligence_models import IntelligenceRecord
+from intelligence_schemas import (
+    IntelligenceOut, IntelligenceStatsOut, CopilotMessage, CopilotResponse
+)
+from copilot.copilot_service import get_copilot_service
 import mock_data
 
 app = FastAPI(
@@ -187,11 +192,53 @@ def detect_change(req: DetectRequest, db: Session = Depends(get_db)):
     )
     
     db.add(record)
+    db.flush() # flush to get record.id for intelligence pipeline
+    
+    # Run intelligence pipeline
+    from ml.services.intelligence_service import run_intelligence_pipeline
+    try:
+        run_intelligence_pipeline(
+            db=db,
+            change_record=record,
+            before_path=before_path,
+            after_path=after_path,
+            components=prediction.get("regions", []),
+            geojson_data=geojson
+        )
+    except Exception as e:
+        print(f"Intelligence pipeline failed: {e}")
+        # We don't want a failing intelligence module to kill the core detection
+    
     db.commit()
     db.refresh(record)
     return record
 
 
+# ---------- Intelligence & Copilot ----------
+@app.get("/api/cases/{change_id}/intelligence", response_model=IntelligenceOut)
+def get_intelligence(change_id: str, db: Session = Depends(get_db)):
+    intel = db.query(IntelligenceRecord).filter(IntelligenceRecord.change_id == change_id).first()
+    if not intel:
+        raise HTTPException(status_code=404, detail="Intelligence not found or not yet processed for this case.")
+    return intel.to_dict()
+
+@app.get("/api/stats/intelligence", response_model=IntelligenceStatsOut)
+def get_intelligence_stats(db: Session = Depends(get_db)):
+    from copilot.tools import get_detection_statistics
+    stats = get_detection_statistics(db)
+    return IntelligenceStatsOut(
+        total_analyzed=stats.get("total_analyzed", 0),
+        by_activity=stats.get("by_activity", {}),
+        by_severity=stats.get("by_severity", {}),
+        sensitive_zone_count=stats.get("sensitive_zone_count", 0),
+        avg_severity_score=stats.get("avg_severity_score", 0.0)
+    )
+
+@app.post("/api/copilot/chat", response_model=CopilotResponse)
+def copilot_chat(msg: CopilotMessage, db: Session = Depends(get_db)):
+    service = get_copilot_service()
+    res = service.chat(msg.message, msg.case_id, db)
+    return CopilotResponse(**res)
 @app.patch("/api/changes/{change_id}/status", response_model=ChangeRecordOut)
 def update_status(change_id: str, body: StatusUpdate, db: Session = Depends(get_db)):
     """Human reviewer marks a flagged change as reviewed/dismissed (section 10: human stays in the loop)."""

@@ -4,6 +4,7 @@ import TopHeader from '../components/TopHeader'
 import Badge from '../components/Badge'
 import { api } from '../api'
 import { useAuth } from '../auth'
+import CopilotWidget from '../components/CopilotWidget'
 
 export default function CaseFile() {
   const { id } = useParams()
@@ -12,8 +13,16 @@ export default function CaseFile() {
   const [c, setC] = useState(null)
   const [noteText, setNoteText] = useState('')
   const [saving, setSaving] = useState(false)
+  const [intel, setIntel] = useState(null)
 
-  const load = () => api.getCase(id).then(setC)
+  const load = () => {
+    api.getCase(id).then(setC)
+    // Safe fetch intelligence; may 404 if not run through Part 2 pipeline
+    fetch(`/api/cases/${id}/intelligence`)
+      .then(r => r.ok ? r.json() : null)
+      .then(setIntel)
+      .catch(() => setIntel(null))
+  }
   useEffect(() => { load() }, [id]) // eslint-disable-line
 
   if (!c) return <div className="loading-inline">Loading case file…</div>
@@ -69,9 +78,21 @@ export default function CaseFile() {
                 </div>
                 <div className="findings-list" style={{ marginTop: 14 }}>
                   <p><b>System Findings &amp; Change Highlights</b></p>
-                  <p>• <b>Structure Detected:</b> High-reflectance change consistent with {c.change_type} identified within the parcel boundary.</p>
-                  <p>• <b>Boundary Proximity:</b> {c.sensitivity_flag ? `Change sits within or adjacent to ${c.sensitivity_zone_name}.` : 'No overlap with mapped sensitive-zone boundaries detected.'}</p>
-                  <p>• <b>Area Affected:</b> Approximately {(c.area_sq_m / 10000).toFixed(2)} hectares affected, model confidence {(c.confidence * 100).toFixed(0)}%.</p>
+                  
+                  {intel ? (
+                    <>
+                      <p>• <b>Activity Classification:</b> {intel.classification.activity_type.toUpperCase()} (Confidence: {(intel.classification.confidence * 100).toFixed(0)}%)</p>
+                      <p>• <b>Geospatial Context:</b> {intel.geospatial.sensitive_zone ? `Overlap with ${intel.geospatial.zone_type} detected.` : 'No sensitive zone overlap.'}</p>
+                      <p>• <b>Severity Level:</b> <Badge value={intel.severity.level.toLowerCase()} /> — {intel.severity.reason}</p>
+                      <p>• <b>Temporal Status:</b> {intel.temporal.status.toUpperCase()} (First detected: {intel.temporal.first_detected ? new Date(intel.temporal.first_detected).toLocaleDateString('en-IN') : 'N/A'})</p>
+                    </>
+                  ) : (
+                    <>
+                      <p>• <b>Structure Detected:</b> High-reflectance change consistent with {c.change_type} identified within the parcel boundary.</p>
+                      <p>• <b>Boundary Proximity:</b> {c.sensitivity_flag ? `Change sits within or adjacent to ${c.sensitivity_zone_name}.` : 'No overlap with mapped sensitive-zone boundaries detected.'}</p>
+                    </>
+                  )}
+                  <p>• <b>Area Affected:</b> Approximately {(c.area_sq_m / 10000).toFixed(2)} hectares affected, model detection confidence {(c.confidence * 100).toFixed(0)}%.</p>
                 </div>
                 <div className="disclaimer-strip">
                   {c.sensitivity_note || 'This is a geographic overlap and structural-change flag only — not a legal determination of ownership or permit status. Human review against official land records is required before any enforcement action.'}
@@ -142,6 +163,7 @@ export default function CaseFile() {
           </div>
         </div>
       </div>
+      <CopilotWidget caseId={id} />
     </>
   )
 }

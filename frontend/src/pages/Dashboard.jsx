@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import TopHeader from '../components/TopHeader'
 import Badge from '../components/Badge'
 import { api } from '../api'
+import CopilotWidget from '../components/CopilotWidget'
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun']
 const MONTH_VALUES = [24, 42, 58, 31, 18, 35] // demo trend, matches design reference
@@ -102,6 +103,7 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+      <CopilotWidget caseId={null} />
     </>
   )
 }
