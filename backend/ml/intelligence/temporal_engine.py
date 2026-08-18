@@ -23,7 +23,8 @@ def analyze_temporal(case_id: str, current_area: float, current_detected_at, db_
         # Get historical records for the same location name
         query = select(ChangeRecord).where(
             (ChangeRecord.location_name == location_name) & 
-            (ChangeRecord.id != case_id)
+            (ChangeRecord.id != case_id) &
+            (ChangeRecord.after_image_date != current.after_image_date)
         ).order_by(ChangeRecord.detected_at.asc())
         candidate_records = db_session.execute(query).scalars().all()
         
