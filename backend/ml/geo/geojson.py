@@ -5,12 +5,13 @@ import pyproj
 from shapely.geometry import shape, Polygon
 from shapely.ops import transform
 
-def generate_geojson(binary_mask, transform_affine, crs, components):
+def generate_geojson(binary_mask, transform_affine, crs, components, resolution=10.0):
     """
     binary_mask: (H, W) numpy array
     transform_affine: affine.Affine object from rasterio
     crs: pyproj.CRS or rasterio.crs.CRS object or string
     components: list of region dicts from postprocess
+    resolution: pixel resolution in meters
     """
     features = []
     

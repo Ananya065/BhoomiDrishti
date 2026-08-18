@@ -1,37 +1,70 @@
 import os
 import torch
 import numpy as np
-import rasterio
 from ..models.model import SiameseUNetAttention
 from ..inference.postprocess import postprocess_mask
 from ..geo.geojson import generate_geojson
+from ..datasets import Sentinel2Adapter, LISS4Adapter
 
 class ModelService:
-    def __init__(self, checkpoint_path=None, device=None, in_channels=13):
+    def __init__(self, sensor="sentinel2", device=None):
         self.device = device if device else torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.in_channels = in_channels
-        self.model = SiameseUNetAttention(pretrained=False, in_channels=in_channels)
-        self.model.to(self.device)
-        self.model.eval()
+        self.sensor = sensor.lower()
         
-        if checkpoint_path and os.path.exists(checkpoint_path):
-            state_dict = torch.load(checkpoint_path, map_location=self.device)
-            self.model.load_state_dict(state_dict)
-            print(f"Loaded model from {checkpoint_path}")
+        # Load configuration
+        self.s2_checkpoint = os.environ.get("SENTINEL2_MODEL_CHECKPOINT_PATH", os.path.join(os.path.dirname(__file__), "..", "models", "best_model.pth"))
+        self.liss4_checkpoint = os.environ.get("LISS4_MODEL_CHECKPOINT_PATH", "")
+        
+        # Model placeholders
+        self.s2_model = None
+        self.liss4_model = None
+        
+        if self.sensor == "sentinel2":
+            self._load_sentinel2()
+        elif self.sensor == "liss4":
+            self._load_liss4()
         else:
-            raise FileNotFoundError("ML model checkpoint unavailable. Cannot run inference.")
+            raise ValueError(f"Unsupported sensor: {self.sensor}")
+            
+    def _load_sentinel2(self):
+        self.s2_model = SiameseUNetAttention(pretrained=False, in_channels=13)
+        self.s2_model.to(self.device)
+        self.s2_model.eval()
+        
+        if self.s2_checkpoint and os.path.exists(self.s2_checkpoint):
+            state_dict = torch.load(self.s2_checkpoint, map_location=self.device)
+            self.s2_model.load_state_dict(state_dict)
+            print(f"Loaded Sentinel-2 model from {self.s2_checkpoint}")
+        else:
+            raise FileNotFoundError("Sentinel-2 ML model checkpoint unavailable. Cannot run inference.")
+
+    def _load_liss4(self):
+        if not self.liss4_checkpoint or not os.path.exists(self.liss4_checkpoint):
+            raise FileNotFoundError("LISS-4 model checkpoint not configured.")
+            
+        # Assuming LISS-4 uses 3 bands (in_channels=3)
+        self.liss4_model = SiameseUNetAttention(pretrained=False, in_channels=3)
+        self.liss4_model.to(self.device)
+        self.liss4_model.eval()
+        state_dict = torch.load(self.liss4_checkpoint, map_location=self.device)
+        self.liss4_model.load_state_dict(state_dict)
+        print(f"Loaded LISS-4 model from {self.liss4_checkpoint}")
             
     def predict(self, before_path, after_path, threshold=0.5):
-        import sys
-        sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))))
-        from ml.preprocessing.transforms import read_and_align_bands, normalize_sentinel2_bands
+        # 1. Authoritative Preprocessing Pipeline using Adapters
+        if self.sensor == "sentinel2":
+            adapter = Sentinel2Adapter(before_path, after_path)
+            model = self.s2_model
+        elif self.sensor == "liss4":
+            adapter = LISS4Adapter(before_path, after_path)
+            model = self.liss4_model
+        else:
+            raise ValueError(f"Unsupported sensor: {self.sensor}")
+            
+        img_a_data, img_b_data = adapter.load_and_align()
         
-        # 1. Authoritative Preprocessing Pipeline
-        img_a_data, target_shape, transform_a, crs_a = read_and_align_bands(before_path)
-        img_b_data, _, _, _ = read_and_align_bands(after_path, target_shape=target_shape)
-        
-        img_a_data = normalize_sentinel2_bands(img_a_data)
-        img_b_data = normalize_sentinel2_bands(img_b_data)
+        img_a_data = adapter.normalize(img_a_data)
+        img_b_data = adapter.normalize(img_b_data)
         
         # 2. Determine padding to make dimensions divisible by 32 (U-Net requirement)
         _, h, w = img_a_data.shape
@@ -47,7 +80,7 @@ class ModelService:
         
         # 3. Model Forward Pass
         with torch.no_grad():
-            logits = self.model(tensor_a, tensor_b)
+            logits = model(tensor_a, tensor_b)
             prob_map = torch.sigmoid(logits).cpu().numpy()[0, 0]
             
         # 4. Crop back to exact original size
@@ -57,7 +90,7 @@ class ModelService:
         binary_mask, components = postprocess_mask(prob_map, threshold=threshold)
         
         # 6. Geospatial Translation
-        geojson_data = generate_geojson(binary_mask, transform_a, crs_a, components)
+        geojson_data = generate_geojson(binary_mask, adapter.transform, adapter.crs, components, adapter.resolution)
         
         # Compute total area
         total_area = sum(f["properties"]["area_sq_m"] for f in geojson_data["features"])
@@ -69,6 +102,7 @@ class ModelService:
             
         return {
             "status": "detected",
+            "sensor": self.sensor,
             "detection": {
                 "confidence": overall_confidence,
                 "area_sq_m": total_area
@@ -77,15 +111,14 @@ class ModelService:
             "geojson": geojson_data
         }
 
-model_service_instance = None
+model_service_instances = {}
 
-def get_model_service():
-    global model_service_instance
-    if model_service_instance is None:
-        checkpoint_path = os.environ.get("MODEL_CHECKPOINT_PATH", os.path.join(os.path.dirname(__file__), "..", "models", "best_model.pth"))
+def get_model_service(sensor="sentinel2"):
+    global model_service_instances
+    sensor = sensor.lower()
+    if sensor not in model_service_instances:
         try:
-            model_service_instance = ModelService(checkpoint_path=checkpoint_path, in_channels=13)
+            model_service_instances[sensor] = ModelService(sensor=sensor)
         except Exception as e:
-            # We delay the throw to the API layer if needed, or throw it here
-            raise RuntimeError(f"Model service failed to initialize: {str(e)}")
-    return model_service_instance
+            raise RuntimeError(f"Model service failed to initialize for sensor {sensor}: {str(e)}")
+    return model_service_instances[sensor]

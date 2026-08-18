@@ -46,7 +46,12 @@ export default function CaseFile() {
       <TopHeader
         title={`Case File: ${c.case_number}`}
         subtitle={`Assigned to: ${c.assigned_officer}`}
-        actions={<button className="btn" onClick={() => navigate('/map')}>← Back to Map</button>}
+        actions={
+          <div className="btn-row">
+            <a href={`http://localhost:8000/api/changes/${id}/report/html`} target="_blank" rel="noopener noreferrer" className="btn primary">Export PDF Report</a>
+            <button className="btn" onClick={() => navigate('/map')}>← Back to Map</button>
+          </div>
+        }
       />
       <div className="portal-content">
         <div className="case-header">
@@ -66,15 +71,29 @@ export default function CaseFile() {
             <div className="card">
               <div className="card-header"><h3>Imagery Comparison — Before / After</h3></div>
               <div className="card-body">
-                <div className="image-compare">
-                  <figure>
-                    <img src={c.before_image_url} alt="before" />
-                    <figcaption>Before · {new Date(c.before_image_date).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}</figcaption>
-                  </figure>
-                  <figure>
-                    <img src={c.after_image_url} alt="after" />
-                    <figcaption>After · {new Date(c.after_image_date).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })} (Detected)</figcaption>
-                  </figure>
+                <div className="image-compare" 
+                     onMouseMove={(e) => {
+                       const rect = e.currentTarget.getBoundingClientRect();
+                       const x = e.clientX - rect.left;
+                       const pct = Math.max(0, Math.min(100, (x / rect.width) * 100));
+                       e.currentTarget.style.setProperty('--slider-pos', `${pct}%`);
+                     }}
+                     style={{ position: 'relative', width: '100%', height: '300px', overflow: 'hidden', borderRadius: '8px', cursor: 'ew-resize', '--slider-pos': '50%' }}>
+                  
+                  <img src={c.after_image_url} alt="after" style={{ width: '100%', height: '100%', objectFit: 'cover', position: 'absolute', top: 0, left: 0 }} />
+                  
+                  <div style={{ position: 'absolute', top: 0, left: 0, width: 'var(--slider-pos)', height: '100%', overflow: 'hidden' }}>
+                    <img src={c.before_image_url} alt="before" style={{ width: '100%', height: '100%', objectFit: 'cover', minWidth: 'max-content' }} />
+                  </div>
+
+                  <div style={{ position: 'absolute', top: 0, bottom: 0, left: 'var(--slider-pos)', width: '2px', background: 'var(--medium)', transform: 'translateX(-50%)', zIndex: 10 }} />
+                  
+                  <div style={{ position: 'absolute', top: 10, left: 10, background: 'rgba(0,0,0,0.6)', color: '#fff', padding: '4px 8px', borderRadius: '4px', fontSize: '11px', zIndex: 20 }}>
+                    Before: {new Date(c.before_image_date).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}
+                  </div>
+                  <div style={{ position: 'absolute', top: 10, right: 10, background: 'rgba(0,0,0,0.6)', color: '#fff', padding: '4px 8px', borderRadius: '4px', fontSize: '11px', zIndex: 20 }}>
+                    After: {new Date(c.after_image_date).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}
+                  </div>
                 </div>
                 <div className="findings-list" style={{ marginTop: 14 }}>
                   <p><b>System Findings &amp; Change Highlights</b></p>
@@ -127,6 +146,24 @@ export default function CaseFile() {
             <div className="card">
               <div className="card-header"><h3>Case Timeline</h3></div>
               <div className="card-body timeline">
+                {intel && intel.temporal.area_progression && intel.temporal.area_progression.length > 0 && (
+                  <>
+                    <h4 style={{marginBottom: 8}}>Temporal Analysis Progression</h4>
+                    {intel.temporal.area_progression.map((prog, i) => (
+                      <div className="timeline-item done" key={`prog-${i}`}>
+                        <div className="timeline-dot" style={{background: 'var(--accent)'}} />
+                        <div>
+                          <div className="timeline-date">{new Date(prog.date).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}</div>
+                          <div className="timeline-stage">Detection Event</div>
+                          <div className="timeline-desc">Detected area: {(prog.area / 10000).toFixed(4)} ha</div>
+                        </div>
+                      </div>
+                    ))}
+                    <div style={{height: 1, background: 'var(--border)', margin: '16px 0'}} />
+                  </>
+                )}
+                
+                <h4 style={{marginBottom: 8}}>Case Log</h4>
                 {c.timeline.map((t, i) => (
                   <div className={`timeline-item ${t.done ? 'done' : ''}`} key={i}>
                     <div className="timeline-dot" />

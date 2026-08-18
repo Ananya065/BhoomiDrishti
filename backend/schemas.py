@@ -51,6 +51,7 @@ class ChangeRecordOut(BaseModel):
     taluka: Optional[str] = None
     village: Optional[str] = None
     survey_number: Optional[str] = None
+    sensor: Optional[str] = "sentinel2"
     status: str
 
     assigned_officer: Optional[str] = None
@@ -82,6 +83,7 @@ class DetectRequest(BaseModel):
     after_image_url: Optional[str] = None
     before_image_date: Optional[datetime.datetime] = None
     after_image_date: Optional[datetime.datetime] = None
+    sensor: Optional[str] = "sentinel2"
 
 
 class StatusUpdate(BaseModel):

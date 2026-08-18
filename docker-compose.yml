@@ -7,7 +7,9 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - backend_data:/app
+      - ./backend/data:/app/data
+      - ./backend/bhoomidrishti.db:/app/bhoomidrishti.db
+      - ./backend/.env:/app/.env
     restart: unless-stopped
 
   frontend:

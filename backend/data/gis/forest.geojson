@@ -1,0 +1,23 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Demo Forest Reserve"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [73.8567, 18.5204],
+            [73.8600, 18.5204],
+            [73.8600, 18.5250],
+            [73.8567, 18.5250],
+            [73.8567, 18.5204]
+          ]
+        ]
+      }
+    }
+  ]
+}

@@ -60,6 +60,7 @@ class ChangeRecord(Base):
     taluka = Column(String, nullable=True)
     village = Column(String, nullable=True)
     survey_number = Column(String, nullable=True)
+    sensor = Column(String, default="sentinel2")
 
     status = Column(String, default="needs_review")  # needs_review | reviewed | dismissed
 
