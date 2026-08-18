@@ -134,6 +134,11 @@ def run_mock_detection(location_name: str, latitude: float, longitude: float,
     seed = uuid.uuid4().hex[:6]
     seq = case_seq if case_seq is not None else random.randint(800, 999)
 
+    # Deterministic: cycle through demo imagery based on sequence number.
+    # seq % 3 gives 0,1,2 → maps to demo pairs 1,2,3.
+    # The same case_seq always produces the same demo_idx after every restart.
+    demo_idx = (seq % 3) + 1
+
     return {
         "case_number": f"PD2026-{seq:04d}",
         "location_name": location_name,
@@ -151,8 +156,8 @@ def run_mock_detection(location_name: str, latitude: float, longitude: float,
         "sensitivity_note": note,
         "before_image_date": b_date,
         "after_image_date": a_date,
-        "before_image_url": f"https://placehold.co/512x512/e8edf2/16324f?text=Before+{seed}",
-        "after_image_url": f"https://placehold.co/512x512/e8edf2/c0533a?text=After+{seed}",
+        "before_image_url": f"/media/cases/case_demo_0{demo_idx}_before.png",
+        "after_image_url": f"/media/cases/case_demo_0{demo_idx}_after.png",
         "mask_geojson": None,
         "survey_number": None,  # filled from DEMO_LOCATIONS by caller
         "status": status,
@@ -167,9 +172,31 @@ def run_mock_detection(location_name: str, latitude: float, longitude: float,
 
 def seed_demo_records(db_session, ChangeRecord, count: int = 18):
     """Populate the DB with demo case records so the dashboard isn't empty on first run."""
-    existing = db_session.query(ChangeRecord).count()
-    if existing > 0:
+    # First, safely update existing records that still have placehold.co URLs
+    existing_records = db_session.query(ChangeRecord).all()
+    updated_any = False
+    for r in existing_records:
+        # Always re-derive the correct deterministic URL from the case sequence number.
+        # This ensures a consistent state on every startup regardless of what was
+        # previously stored (random, placehold.co, or mismatched).
+        try:
+            seq = int(r.case_number.split("-")[-1])
+        except (ValueError, AttributeError, IndexError):
+            seq = hash(r.id) % 3
+        demo_idx = (seq % 3) + 1
+        correct_before = f"/media/cases/case_demo_0{demo_idx}_before.png"
+        correct_after = f"/media/cases/case_demo_0{demo_idx}_after.png"
+        if r.before_image_url != correct_before or r.after_image_url != correct_after:
+            r.before_image_url = correct_before
+            r.after_image_url = correct_after
+            updated_any = True
+    if updated_any:
+        db_session.commit()
+
+    existing_count = len(existing_records)
+    if existing_count > 0:
         return
+        
     for i in range(count):
         loc = random.choice(DEMO_LOCATIONS)
         jitter_lat = loc["latitude"] + random.uniform(-0.02, 0.02)

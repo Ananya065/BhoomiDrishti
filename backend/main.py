@@ -42,6 +42,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from fastapi.staticfiles import StaticFiles
+import os
+
+# Mount the static media directory robustly using absolute paths based on __file__
+media_dir = os.path.join(os.path.dirname(__file__), "media")
+os.makedirs(media_dir, exist_ok=True)
+app.mount("/media", StaticFiles(directory=media_dir), name="media")
 
 @app.on_event("startup")
 def on_startup():
