@@ -22,6 +22,13 @@ env/
 backend/bhoomidrishti.db
 backend/ml/models/best_model.pth
 
+# ML checkpoints — large binary files, never commit to Git
+backend/ml/checkpoints/*.pth
+backend/ml/checkpoints/*.pt
+
+# Inference outputs — generated files, not source code
+backend/data/inference_outputs/
+
 # GIS datasets — large files, not tracked in Git
 # Place them in backend/data/gis/ and set GIS_DATA_ROOT in your .env
 backend/data/gis/all_india_water.geojson

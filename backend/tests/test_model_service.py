@@ -5,15 +5,17 @@ from unittest.mock import patch, MagicMock
 from ml.services.model_service import ModelService
 
 def test_model_service_sentinel2_success():
-    """Test that Sentinel-2 model is selected and fails if checkpoint is missing, but logic flows."""
+    """Test that Sentinel-2 model is selected and logic flows with a valid checkpoint."""
+    # Mock a checkpoint with a 3-channel initial.0.weight
+    dummy_ckpt = {'initial.0.weight': torch.zeros(64, 3, 7, 7)}
     with patch('os.path.exists', return_value=True), \
-         patch('torch.load', return_value={}), \
+         patch('torch.load', return_value=dummy_ckpt), \
          patch('ml.models.model.SiameseUNetAttention.load_state_dict'):
         service = ModelService(sensor='sentinel2', device=torch.device('cpu'))
         assert service.sensor == 'sentinel2'
         assert service.s2_model is not None
         assert service.liss4_model is None
-        assert service.s2_model.initial[0].in_channels == 13
+        assert service.s2_model.initial[0].in_channels == 3
 
 def test_model_service_liss4_missing_checkpoint():
     """Test that LISS-4 honestly fails when checkpoint is missing."""
