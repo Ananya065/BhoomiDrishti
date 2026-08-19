@@ -1,5 +1,5 @@
 import math
-from backend.ml.intelligence.severity_config import WEIGHTS, ACTIVITY_SEVERITY, AREA_THRESHOLDS, SEVERITY_LEVELS
+from .severity_config import WEIGHTS, ACTIVITY_SEVERITY, AREA_THRESHOLDS, SEVERITY_LEVELS
 
 def compute_severity(area_sq_m: float, detection_confidence: float, activity_type: str, classification_confidence: float, gis_overlap_pct: float, sensitive_zone: bool) -> dict:
     # area_score: normalize area using log scale against AREA_THRESHOLDS, cap at 100

@@ -20,7 +20,7 @@ import geopandas as gpd
 from shapely.geometry import shape, mapping
 from shapely.validation import make_valid
 
-from backend.ml.gis.layers import get_available_layers
+from .layers import get_available_layers
 
 logger = logging.getLogger(__name__)
 

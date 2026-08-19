@@ -49,6 +49,20 @@ class ModelService:
         )
         self.liss4_checkpoint = os.environ.get("LISS4_MODEL_CHECKPOINT_PATH", "")
 
+        # --- Configurable inference threshold (TASK 1) ---
+        # Reads SENTINEL2_INFERENCE_THRESHOLD from .env; defaults to 0.5 if absent/invalid.
+        _raw_thresh = os.environ.get("SENTINEL2_INFERENCE_THRESHOLD", "0.5")
+        try:
+            _parsed = float(_raw_thresh)
+            if 0.0 < _parsed <= 1.0:
+                self.s2_threshold = _parsed
+            else:
+                print(f"[ModelService] WARNING: SENTINEL2_INFERENCE_THRESHOLD={_raw_thresh} out of (0,1]; defaulting to 0.5")
+                self.s2_threshold = 0.5
+        except (ValueError, TypeError):
+            print(f"[ModelService] WARNING: Could not parse SENTINEL2_INFERENCE_THRESHOLD={_raw_thresh!r}; defaulting to 0.5")
+            self.s2_threshold = 0.5
+
         self.s2_model = None
         self.liss4_model = None
 
@@ -134,7 +148,7 @@ class ModelService:
     # Inference
     # ------------------------------------------------------------------
 
-    def predict(self, before_path: str, after_path: str, threshold: float = 0.5) -> dict:
+    def predict(self, before_path: str, after_path: str, threshold: float = None) -> dict:
         """
         Run inference on a before/after image pair.
 
@@ -142,12 +156,15 @@ class ModelService:
             before_path: Path to the BEFORE imagery directory (containing band TIFs)
                          or a single image file depending on sensor.
             after_path:  Path to the AFTER imagery directory.
-            threshold:   Binary mask threshold on sigmoid probability (default 0.5).
+            threshold:   Binary mask threshold on sigmoid probability.
+                         Defaults to SENTINEL2_INFERENCE_THRESHOLD env-var (fallback 0.5).
 
         Returns:
             dict with keys: status, sensor, detection, regions, geojson,
                             probability_map_stats, mask_stats
         """
+        if threshold is None:
+            threshold = getattr(self, "s2_threshold", 0.5)
         if self.sensor == "sentinel2":
             return self._predict_sentinel2(before_path, after_path, threshold)
         elif self.sensor == "liss4":
@@ -157,26 +174,44 @@ class ModelService:
 
     def _predict_sentinel2(self, before_path: str, after_path: str, threshold: float) -> dict:
         """
-        Sentinel-2 inference using the trained 3-channel RGB checkpoint.
-
-        Preprocessing:
-            - Read B04 (Red), B03 (Green), B02 (Blue) bands
-            - Normalize by dividing by 10000 (standard S2 Level-2A scaling)
-            - Clip to [0, 1]
-            - Pad to nearest multiple of 32 (U-Net architecture requirement)
+        Sentinel-2 inference handling both 13-channel native and 3-channel legacy checkpoints.
         """
-        from ..preprocessing.rgb_adapter import load_rgb_sentinel2
+        if self._s2_in_channels == 3:
+            # ---------------------------------------------------------
+            # DEVELOPER NOTE:
+            # The currently supplied checkpoint is a 3-channel RGB model.
+            # Because the original training dataset for this checkpoint could not 
+            # be established as the OSCD 13-band pipeline, BhoomiDrishti uses an 
+            # explicit legacy RGB compatibility adapter for demonstration/integration. 
+            # A future production model should be retrained natively on the 13-band 
+            # Sentinel-2 pipeline.
+            # ---------------------------------------------------------
+            print("[ModelService] Model input channels: 3")
+            print("[ModelService] Preprocessing mode: legacy RGB compatibility")
+            print(f"[ModelService] Inference threshold: {threshold}")
+            from ..preprocessing.rgb_adapter import prepare_rgb_for_legacy_checkpoint
+            try:
+                img_a, shape_a, transform_a, crs_a = prepare_rgb_for_legacy_checkpoint(before_path)
+                img_b, _, _, _ = prepare_rgb_for_legacy_checkpoint(after_path, target_shape=shape_a)
+            except FileNotFoundError as e:
+                raise ValueError(f"Invalid before/after satellite imagery: {e}") from e
+            except Exception as e:
+                raise ValueError(f"Before and after images could not be aligned: {e}") from e
+        else:
+            # Native 13-channel
+            print(f"[ModelService] Model input channels: {self._s2_in_channels}")
+            print("[ModelService] Preprocessing mode: native 13-channel Sentinel-2")
+            from ..datasets.sentinel2_adapter import Sentinel2Adapter
+            try:
+                adapter = Sentinel2Adapter(before_path, after_path)
+                img_a, img_b = adapter.load_and_align()
+                shape_a = (img_a.shape[1], img_a.shape[2])
+                transform_a = adapter.transform
+                crs_a = adapter.crs
+            except Exception as e:
+                raise ValueError(f"Sentinel-2 13-channel data loading failed: {e}") from e
 
-        # --- Load and normalize RGB imagery ---
-        try:
-            img_a, shape_a, transform_a, crs_a = load_rgb_sentinel2(before_path)
-            img_b, _, _, _ = load_rgb_sentinel2(after_path, target_shape=shape_a)
-        except FileNotFoundError as e:
-            raise ValueError(f"Invalid before/after satellite imagery: {e}") from e
-        except Exception as e:
-            raise ValueError(f"Before and after images could not be aligned: {e}") from e
-
-        _, h, w = img_a.shape  # (3, H, W)
+        _, h, w = img_a.shape  # (C, H, W)
 
         # --- Pad to multiple of 32 ---
         pad_h = (32 - h % 32) % 32

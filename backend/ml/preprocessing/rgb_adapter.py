@@ -57,6 +57,61 @@ def load_rgb_sentinel2(band_dir: str, target_shape=None):
         bands.append(data)
 
     image = np.stack(bands, axis=0)  # (3, H, W)
-    # Normalize: Sentinel-2 Level-2A reflectance scaled by 10000
+    # Native Normalize: Sentinel-2 Level-2A reflectance scaled by 10000
     image = np.clip(image / 10000.0, 0.0, 1.0)
+    return image, target_shape, ref_transform, ref_crs
+
+def prepare_rgb_for_legacy_checkpoint(band_dir: str, target_shape=None):
+    """
+    Compatibility preprocessing for the 3-channel RGB legacy checkpoint.
+    
+    The legacy checkpoint was inadvertently trained on an 8-bit visual RGB distribution 
+    rather than true Sentinel-2 reflectance physics. If we pass /10000.0 normalized 
+    reflectance into it, max probabilities sit below 0.3.
+    
+    This adapter explicitly converts 16-bit GeoTIFF raw values (0-10000) directly 
+    by /255.0 to map them into the distribution expected by the legacy model.
+    
+    Extracts: B04 (Red), B03 (Green), B02 (Blue)
+    
+    Returns:
+        image  : np.ndarray float32, shape (3, H, W)
+        shape  : (H, W) tuple
+        transform: rasterio affine transform of B04
+        crs    : CRS of B04
+    """
+    ref_path = os.path.join(band_dir, "B04.tif")
+    if not os.path.exists(ref_path):
+        raise FileNotFoundError(f"B04.tif not found in {band_dir}")
+
+    with rasterio.open(ref_path) as ref:
+        ref_shape = (ref.height, ref.width)
+        ref_transform = ref.transform
+        ref_crs = ref.crs
+        if target_shape is None:
+            target_shape = ref_shape
+
+    bands = []
+    # explicit channel order: Red, Green, Blue
+    for band_name in ["B04.tif", "B03.tif", "B02.tif"]:
+        path = os.path.join(band_dir, band_name)
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"{band_name} not found in {band_dir}")
+        with rasterio.open(path) as src:
+            if (src.height, src.width) == target_shape:
+                data = src.read(1).astype(np.float32)
+            else:
+                data = src.read(
+                    1,
+                    out_shape=target_shape,
+                    resampling=Resampling.bilinear,
+                ).astype(np.float32)
+        bands.append(data)
+
+    image = np.stack(bands, axis=0)  # (3, H, W)
+    
+    # Legacy Compatibility Scaling: Divide raw Sentinel-2 DN by 255.0
+    # Values will typically range from ~0.0 to ~15.0+ instead of 0.0 to 1.0.
+    image = image / 255.0
+    
     return image, target_shape, ref_transform, ref_crs
