@@ -6,6 +6,13 @@ logic currently runs through mock_data.py (see that file's docstring for
 exactly how to swap in the real model + real sensitivity-zone overlap
 logic without touching routes, DB, or frontend).
 """
+import os
+from dotenv import load_dotenv
+
+# Load environment variables FIRST before importing local services
+# that instantiate singletons (e.g. CopilotService)
+load_dotenv()
+
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
